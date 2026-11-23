@@ -1,5 +1,3 @@
-"""Print a Markdown summary of a JUnit XML report, for $GITHUB_STEP_SUMMARY."""
-
 import sys
 import xml.etree.ElementTree as ET
 

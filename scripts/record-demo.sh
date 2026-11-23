@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# Records docs/demo.gif from screenshots of the extension in a headless GNOME Shell.
-# Needs a connected headset (for a real battery level) and Pillow (python3-pil).
 set -euo pipefail
 
 REPO=$(cd "$(dirname "$0")/.." && pwd)

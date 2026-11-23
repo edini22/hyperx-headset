@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# Loads the repo's extension in a throwaway headless GNOME Shell (own session bus and settings)
-# next to a helper extension (PROBE, default probe@local) and prints what the helper logs.
 set -euo pipefail
 
 REPO=$(cd "$(dirname "$0")/../.." && pwd)

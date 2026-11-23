@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Prints the CHANGELOG.md section for the given version (without its heading and link references).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 

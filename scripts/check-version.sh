@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# Fails unless bin/hyperx-headset, pyproject.toml, metadata.json and CHANGELOG.md agree on the version,
-# and, when a tag is given (e.g. v0.1.0), unless the tag matches it too. Prints the version.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 

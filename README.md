@@ -218,7 +218,7 @@ All versions are pinned: Python tools in `requirements-dev.txt` (compiled from
 `package-lock.json`, and GitHub Actions to commit SHAs. To update the Python tools:
 
 ```bash
-uv pip compile requirements-dev.in --universal --python-version 3.10 --upgrade -o requirements-dev.txt
+uv pip compile requirements-dev.in --universal --python-version 3.10 --no-annotate --upgrade -o requirements-dev.txt
 ```
 
 `tests/headless/run.sh` starts GNOME Shell with `--headless` on its own session bus, with a
