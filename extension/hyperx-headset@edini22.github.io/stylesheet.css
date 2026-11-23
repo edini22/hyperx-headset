@@ -12,3 +12,11 @@
   spacing: 6px;
   min-width: 14em;
 }
+
+.hyperx-headset-battery .barlevel {
+  -barlevel-height: 6px;
+  -barlevel-background-color: rgba(127, 127, 127, 0.3);
+  -barlevel-active-background-color: -st-accent-color;
+  -barlevel-overdrive-color: #c01c28;
+  -barlevel-overdrive-separator-width: 1px;
+}
