@@ -1,0 +1,640 @@
+#!/usr/bin/env python3
+"""Battery, sidetone, auto power-off and equalizer for the HyperX Cloud III S Wireless (USB dongle).
+
+Protocol: https://github.com/LennardKittner/HyperHeadset/pull/69 (MIT).
+"""
+
+import argparse
+import contextlib
+import json
+import os
+import select
+import signal
+import sys
+import time
+from collections import deque
+from pathlib import Path
+
+VERSION = "0.1.0"
+
+VENDOR_ID = 0x03F0
+PRODUCT_IDS = (0x02CC, 0x06BE)
+REPORT_LEN = 64
+
+RESPONSE = 0x0C
+NOTIFICATION = 0x0D
+MIC_REPORT = 0x05
+
+CMD_CONNECTED = 0x02
+CMD_MIC_MUTE = 0x04
+CMD_BATTERY = 0x06
+CMD_SET_SIDETONE = 0x0D
+CMD_SIDETONE = 0x16
+CMD_CHARGING = 0x48
+CMD_SET_AUTO_OFF = 0x4A
+CMD_AUTO_OFF = 0x4B
+CMD_SET_EQ_BAND = 0x5F
+
+STATUS_QUERIES = (CMD_CONNECTED, CMD_BATTERY, CMD_CHARGING, CMD_MIC_MUTE, CMD_SIDETONE, CMD_AUTO_OFF)
+HEADSET_FIELDS = ("battery", "charging", "muted", "sidetone", "auto_off")
+
+AUTO_OFF_MINUTES = (0, 10, 20, 30)
+EQ_BANDS = ("32 Hz", "64 Hz", "125 Hz", "250 Hz", "500 Hz", "1 kHz", "2 kHz", "4 kHz", "8 kHz", "16 kHz")
+EQ_PRESETS = {
+    "flat": ("Flat", (0, 0, 0, 0, 0, 0, 0, 0, 0, 0)),
+    "bass": ("Bass boost", (6, 5, 3, 1, 0, 0, 0, 0, 0, 0)),
+    "treble": ("Treble boost", (0, 0, 0, 0, 0, 1, 2, 4, 5, 6)),
+    "v-shape": ("V-shape", (5, 4, 2, 0, -2, -2, 0, 2, 4, 5)),
+    "vocal": ("Vocal", (-2, -1, 0, 2, 4, 4, 3, 1, 0, -1)),
+}
+CHARGING_LABELS = {1: "charging", 2: "fully charged"}
+LOW_BATTERY = 15
+
+CONFIG_PATH = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config") / "hyperx-headset" / "config.json"
+UDEV_RULE = "/etc/udev/rules.d/70-hyperx-cloud-iii-s.rules"
+DEAF_HINT = (
+    "The dongle is not passing on replies from the headset. Add the kernel parameter "
+    "usbcore.quirks=03f0:02cc:r and replug the dongle."
+)
+
+
+def load_config():
+    try:
+        return json.loads(CONFIG_PATH.read_text())
+    except (OSError, ValueError):
+        return {}
+
+
+def save_config(config):
+    CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    CONFIG_PATH.write_text(json.dumps(config, indent=2) + "\n")
+
+
+def config_gains(config):
+    eq = config.get("eq")
+    if isinstance(eq, str) and eq in EQ_PRESETS:
+        return EQ_PRESETS[eq][1]
+    if isinstance(eq, list) and len(eq) == len(EQ_BANDS):
+        return eq
+    return None
+
+
+def get_packet(cmd):
+    return bytes([RESPONSE, 0x02, 0x03, 0x01, 0x00, cmd]).ljust(REPORT_LEN, b"\0")
+
+
+def set_packet(cmd, *values):
+    return bytes([RESPONSE, 0x02, 0x03, 0x00, 0x00, cmd, *values]).ljust(REPORT_LEN, b"\0")
+
+
+def auto_off_packet(minutes):
+    seconds = minutes * 60
+    return set_packet(CMD_SET_AUTO_OFF, seconds >> 8, seconds & 0xFF)
+
+
+def eq_packets(gains):
+    for band, db in enumerate(gains):
+        hundredths = round(max(-12.0, min(12.0, float(db))) * 100)
+        yield set_packet(CMD_SET_EQ_BAND, band, *(hundredths & 0xFFFF).to_bytes(2, "big"))
+
+
+def parse_report(report):
+    if len(report) >= 2 and report[0] == MIC_REPORT:
+        return {"muted": bool(report[1] & 0x02)}
+    if len(report) < 8:
+        return {}
+    if report[0] == RESPONSE:
+        cmd, value = report[5], report[6]
+        if value == 0xFF:
+            return {}
+        return {
+            CMD_CONNECTED: {"connected": value == 2},
+            CMD_BATTERY: {"battery": value},
+            CMD_CHARGING: {"charging": value},
+            CMD_MIC_MUTE: {"muted": value == 1},
+            CMD_SIDETONE: {"sidetone": value == 1},
+            CMD_AUTO_OFF: {"auto_off": (value << 8 | report[7]) // 60},
+        }.get(cmd, {})
+    if report[0] == NOTIFICATION:
+        kind, value = report[4], report[5]
+        return {
+            1: {"battery": value},
+            3: {"muted": value == 1},
+            5: {"sidetone": value == 1},
+            10: {"charging": value},
+            12: {"connected": value == 1},
+        }.get(kind, {})
+    return {}
+
+
+def answers(report, cmd):
+    return len(report) > 5 and report[0] == RESPONSE and report[5] == cmd
+
+
+def find_device():
+    for uevent in sorted(Path("/sys/class/hidraw").glob("*/device/uevent")):
+        try:
+            fields = dict(line.split("=", 1) for line in uevent.read_text().splitlines() if "=" in line)
+            _, vendor, product = fields["HID_ID"].split(":")
+        except (OSError, KeyError, ValueError):
+            continue
+        if int(vendor, 16) == VENDOR_ID and int(product, 16) in PRODUCT_IDS:
+            return Path("/dev") / uevent.parent.parent.name
+    return None
+
+
+class Dongle:
+    def __init__(self, path):
+        self.path = path
+        self.fd = os.open(path, os.O_RDWR | os.O_NONBLOCK)
+
+    def close(self):
+        os.close(self.fd)
+
+    def write(self, packet):
+        os.write(self.fd, packet)
+
+    def read(self):
+        try:
+            return os.read(self.fd, REPORT_LEN)
+        except BlockingIOError:
+            return None
+
+    def apply(self, packets):
+        for packet in packets:
+            self.write(packet)
+            time.sleep(0.03)
+
+    def request(self, cmd, timeout=1.0, debug=False):
+        self.write(get_packet(cmd))
+        state = {}
+        deadline = time.monotonic() + timeout
+        while (left := deadline - time.monotonic()) > 0:
+            if not select.select([self.fd], [], [], left)[0]:
+                break
+            report = self.read()
+            if not report:
+                continue
+            if debug:
+                print("  <", report.rstrip(b"\0").hex(" "), file=sys.stderr)
+            state.update(parse_report(report))
+            if answers(report, cmd):
+                break
+        return state
+
+    def status(self, debug=False):
+        state = self.request(CMD_CONNECTED, debug=debug)
+        if state.get("connected"):
+            for cmd in STATUS_QUERIES[1:]:
+                state.update(self.request(cmd, debug=debug))
+        return state
+
+
+def battery_text(state):
+    if "battery" not in state:
+        return "?"
+    extra = CHARGING_LABELS.get(state.get("charging"))
+    return f"{state['battery']}%" + (f" ({extra})" if extra else "")
+
+
+def auto_off_text(minutes):
+    if minutes is None:
+        return "?"
+    return "never" if minutes == 0 else f"{minutes} min"
+
+
+def eq_text(config):
+    eq = config.get("eq")
+    if isinstance(eq, str) and eq in EQ_PRESETS:
+        return EQ_PRESETS[eq][0]
+    if config_gains(config) is not None:
+        return "Custom (" + ", ".join(f"{g:+g}" for g in eq) + " dB)"
+    return "unknown (not applied by this tool yet)"
+
+
+def print_status(path, state, config):
+    print(f"HyperX Cloud III S Wireless ({path})")
+    if state.get("connected") is None:
+        print("  The dongle did not reply. Try unplugging it and plugging it back in.")
+        return
+    if not state["connected"]:
+        print("  Headset is off or out of range.")
+        return
+    if "battery" not in state:
+        print(f"  {DEAF_HINT}")
+        return
+    rows = (
+        ("Battery", battery_text(state)),
+        ("Microphone", {True: "muted", False: "active"}.get(state.get("muted"), "?")),
+        ("Sidetone", {True: "on", False: "off"}.get(state.get("sidetone"), "?")),
+        ("Auto power-off", auto_off_text(state.get("auto_off"))),
+        ("Equalizer", eq_text(config)),
+    )
+    for label, value in rows:
+        print(f"  {label + ':':16} {value}")
+
+
+def open_dongle():
+    path = find_device()
+    if path is None:
+        sys.exit("HyperX Cloud III S dongle not found.")
+    try:
+        return Dongle(path)
+    except PermissionError:
+        sys.exit(f"No permission to open {path}. Is the udev rule {UDEV_RULE} missing?")
+
+
+def parse_gains(text):
+    try:
+        gains = [float(x) for x in text.split(",")]
+    except ValueError:
+        gains = []
+    if len(gains) != len(EQ_BANDS) or any(abs(g) > 12 for g in gains):
+        raise argparse.ArgumentTypeError(
+            f"expected {len(EQ_BANDS)} comma-separated values between -12 and 12 dB ({', '.join(EQ_BANDS)})"
+        )
+    return gains
+
+
+def run_cli(args):
+    dongle = open_dongle()
+    config = load_config()
+    packets = []
+    if args.sidetone is not None:
+        packets.append(set_packet(CMD_SET_SIDETONE, args.sidetone == "on"))
+    if args.auto_off is not None:
+        packets.append(auto_off_packet(args.auto_off))
+    if args.eq or args.eq_custom:
+        config["eq"] = args.eq or args.eq_custom
+        packets.extend(eq_packets(config_gains(config)))
+    if packets:
+        if not dongle.request(CMD_CONNECTED).get("connected"):
+            sys.exit("The headset must be on to change settings.")
+        dongle.apply(packets)
+        if args.eq or args.eq_custom:
+            save_config(config)
+        time.sleep(0.2)
+    state = dongle.status(debug=args.debug)
+    print_status(dongle.path, state, config)
+    if args.sidetone == "on" and state.get("muted"):
+        print("  Note: sidetone only works while the microphone is unmuted.")
+
+
+BUS_NAME = "io.github.edini22.HyperXHeadset"
+OBJECT_PATH = "/io/github/edini22/HyperXHeadset"
+INTERFACE = "io.github.edini22.HyperXHeadset"
+INTERFACE_XML = f"""
+<node>
+  <interface name="{INTERFACE}">
+    <property name="Status" type="s" access="read"/>
+    <property name="Message" type="s" access="read"/>
+    <property name="Battery" type="i" access="read"/>
+    <property name="Charging" type="i" access="read"/>
+    <property name="Muted" type="i" access="read"/>
+    <property name="Sidetone" type="i" access="read"/>
+    <property name="AutoOff" type="i" access="read"/>
+    <property name="Eq" type="s" access="read"/>
+    <property name="EqPresets" type="a(ss)" access="read"/>
+    <property name="AutoOffChoices" type="ai" access="read"/>
+    <method name="SetSidetone"><arg name="enabled" type="b" direction="in"/></method>
+    <method name="SetAutoOff"><arg name="minutes" type="i" direction="in"/></method>
+    <method name="SetEq"><arg name="preset" type="s" direction="in"/></method>
+    <method name="Refresh"/>
+  </interface>
+</node>
+"""
+
+
+def tristate(value):
+    return -1 if value is None else int(value)
+
+
+def run_service():
+    import gi
+
+    gi.require_version("Notify", "0.7")
+    gi.require_version("GLibUnix", "2.0")
+    from gi.repository import Gio, GLib, GLibUnix, Notify
+
+    class Service:
+        def __init__(self, loop):
+            self.loop = loop
+            self.connection = None
+            self.owns_name = False
+            self.published = {}
+            self.dongle = None
+            self.watch = None
+            self.request_timeout = None
+            self.queue = deque()
+            self.waiting_for = None
+            self.state = {}
+            self.no_access = None
+            self.deaf = False
+            self.warned_low = False
+            self.config = load_config()
+            Notify.init("HyperX Headset")
+            self.interface_info = Gio.DBusNodeInfo.new_for_xml(INTERFACE_XML).interfaces[0]
+            Gio.bus_own_name(
+                Gio.BusType.SESSION,
+                BUS_NAME,
+                Gio.BusNameOwnerFlags.DO_NOT_QUEUE,
+                self.on_bus_acquired,
+                self.on_name_acquired,
+                self.on_name_lost,
+            )
+
+        def on_bus_acquired(self, connection, _name):
+            self.connection = connection
+            connection.register_object_with_closures2(
+                OBJECT_PATH, self.interface_info, self.on_method_call, self.on_get_property, None
+            )
+
+        def on_name_acquired(self, _connection, _name):
+            self.owns_name = True
+            self.connect()
+            GLib.timeout_add_seconds(60, self.poll)
+            GLib.timeout_add_seconds(5, self.reconnect)
+
+        def on_name_lost(self, _connection, _name):
+            if not self.owns_name:
+                print("The HyperX service is already running.", file=sys.stderr)
+            self.loop.quit()
+
+        def status(self):
+            if self.dongle is None:
+                return "no-access" if self.no_access else "no-dongle"
+            connected = self.state.get("connected")
+            if connected is None:
+                return "connecting"
+            if not connected:
+                return "disconnected"
+            if "battery" not in self.state:
+                return "deaf" if self.deaf else "reading"
+            return "ok"
+
+        def message(self, status):
+            return {
+                "no-dongle": "Dongle not found",
+                "no-access": f"No access to {self.no_access}",
+                "connecting": "Talking to the dongle…",
+                "disconnected": "Headset off",
+                "deaf": "No replies from headset (usbcore.quirks missing)",
+                "reading": "Reading battery…",
+            }.get(status) or battery_text(self.state)
+
+        def properties(self):
+            status = self.status()
+            eq = self.config.get("eq")
+            return {
+                "Status": GLib.Variant("s", status),
+                "Message": GLib.Variant("s", self.message(status)),
+                "Battery": GLib.Variant("i", self.state.get("battery", -1)),
+                "Charging": GLib.Variant("i", self.state.get("charging", -1)),
+                "Muted": GLib.Variant("i", tristate(self.state.get("muted"))),
+                "Sidetone": GLib.Variant("i", tristate(self.state.get("sidetone"))),
+                "AutoOff": GLib.Variant("i", self.state.get("auto_off", -1)),
+                "Eq": GLib.Variant("s", eq if isinstance(eq, str) else "custom" if eq else ""),
+                "EqPresets": GLib.Variant("a(ss)", [(key, label) for key, (label, _) in EQ_PRESETS.items()]),
+                "AutoOffChoices": GLib.Variant("ai", list(AUTO_OFF_MINUTES)),
+            }
+
+        def publish(self):
+            current = self.properties()
+            changed = {
+                name: value
+                for name, value in current.items()
+                if name not in self.published or self.published[name].unpack() != value.unpack()
+            }
+            self.published = current
+            if changed and self.connection:
+                self.connection.emit_signal(
+                    None,
+                    OBJECT_PATH,
+                    "org.freedesktop.DBus.Properties",
+                    "PropertiesChanged",
+                    GLib.Variant("(sa{sv}as)", (INTERFACE, changed, [])),
+                )
+            self.check_low_battery()
+
+        def on_get_property(self, _connection, _sender, _path, _interface, name):
+            return self.properties()[name]
+
+        def on_method_call(self, _connection, _sender, _path, _interface, method, parameters, invocation):
+            args = parameters.unpack()
+            try:
+                if method == "Refresh":
+                    self.poll()
+                elif method == "SetSidetone":
+                    if args[0] and self.state.get("muted"):
+                        raise ValueError("Sidetone only works while the microphone is unmuted")
+                    self.apply_setting([set_packet(CMD_SET_SIDETONE, bool(args[0]))], CMD_SIDETONE)
+                elif method == "SetAutoOff":
+                    if args[0] not in AUTO_OFF_MINUTES:
+                        raise ValueError(f"Invalid value: {args[0]} (allowed: {AUTO_OFF_MINUTES})")
+                    self.apply_setting([auto_off_packet(args[0])], CMD_AUTO_OFF)
+                elif method == "SetEq":
+                    if args[0] not in EQ_PRESETS:
+                        raise ValueError(f"Unknown preset: {args[0]}")
+                    self.apply_setting(eq_packets(EQ_PRESETS[args[0]][1]), None)
+                    self.config["eq"] = args[0]
+                    save_config(self.config)
+                    self.publish()
+            except (ValueError, RuntimeError) as e:
+                invocation.return_dbus_error(f"{INTERFACE}.Error", str(e))
+                return
+            invocation.return_value(None)
+
+        def apply_setting(self, packets, confirm_cmd):
+            if not self.state.get("connected"):
+                raise RuntimeError("Headset is off")
+            if not self.write(packets):
+                raise RuntimeError("Could not talk to the dongle")
+            if confirm_cmd is not None:
+                self.request(confirm_cmd)
+
+        def connect(self):
+            path = find_device()
+            if path is None:
+                self.no_access = None
+                self.publish()
+                return
+            try:
+                self.dongle = Dongle(path)
+            except OSError:
+                self.no_access = str(path)
+                self.publish()
+                return
+            self.no_access = None
+            self.state = {}
+            self.deaf = False
+            self.watch = GLib.io_add_watch(
+                self.dongle.fd, GLib.PRIORITY_DEFAULT, GLib.IO_IN | GLib.IO_ERR | GLib.IO_HUP, self.on_readable
+            )
+            self.request(CMD_CONNECTED)
+            self.publish()
+
+        def disconnect(self):
+            if self.watch:
+                GLib.source_remove(self.watch)
+                self.watch = None
+            self.cancel_request_timeout()
+            if self.dongle:
+                with contextlib.suppress(OSError):
+                    self.dongle.close()
+                self.dongle = None
+            self.queue.clear()
+            self.waiting_for = None
+            self.state = {}
+            self.publish()
+
+        def reconnect(self):
+            if self.dongle is None:
+                self.connect()
+            return True
+
+        def poll(self):
+            if self.state.get("connected"):
+                self.request(*STATUS_QUERIES)
+            elif self.dongle is not None:
+                self.request(CMD_CONNECTED)
+            return True
+
+        def request(self, *cmds):
+            for cmd in cmds:
+                if cmd not in self.queue and cmd != self.waiting_for:
+                    self.queue.append(cmd)
+            if self.waiting_for is None:
+                self.send_next()
+
+        def send_next(self):
+            self.cancel_request_timeout()
+            self.waiting_for = None
+            if not self.dongle or not self.queue:
+                return
+            cmd = self.queue.popleft()
+            if not self.write([get_packet(cmd)]):
+                return
+            self.waiting_for = cmd
+            self.request_timeout = GLib.timeout_add(800, self.on_request_timeout)
+
+        def on_request_timeout(self):
+            self.request_timeout = None
+            self.send_next()
+            return False
+
+        def cancel_request_timeout(self):
+            if self.request_timeout:
+                GLib.source_remove(self.request_timeout)
+                self.request_timeout = None
+
+        def write(self, packets):
+            if not self.dongle:
+                return False
+            try:
+                self.dongle.apply(packets)
+                return True
+            except OSError:
+                self.disconnect()
+                return False
+
+        def on_readable(self, _fd, condition):
+            if condition & (GLib.IO_ERR | GLib.IO_HUP):
+                self.watch = None
+                self.disconnect()
+                return False
+            while self.dongle:
+                try:
+                    report = self.dongle.read()
+                except OSError:
+                    self.watch = None
+                    self.disconnect()
+                    return False
+                if not report:
+                    break
+                self.handle(report)
+            return True
+
+        def handle(self, report):
+            update = parse_report(report)
+            was_connected = self.state.get("connected")
+            self.state.update(update)
+            if update.get("connected") and not was_connected:
+                GLib.timeout_add_seconds(2, self.on_headset_connected)
+            elif update.get("connected") is False:
+                for field in HEADSET_FIELDS:
+                    self.state.pop(field, None)
+            if "battery" in update:
+                self.deaf = False
+            self.publish()
+            if self.waiting_for is not None and answers(report, self.waiting_for):
+                self.send_next()
+
+        def on_headset_connected(self):
+            gains = config_gains(self.config)
+            if gains is not None:
+                self.write(eq_packets(gains))
+            self.request(*STATUS_QUERIES[1:])
+            GLib.timeout_add_seconds(10, self.check_deaf)
+            return False
+
+        def check_deaf(self):
+            self.deaf = bool(self.state.get("connected")) and "battery" not in self.state
+            self.publish()
+            return False
+
+        def check_low_battery(self):
+            battery = self.state.get("battery")
+            if battery is None:
+                return
+            if self.state.get("charging") in (1, 2) or battery > LOW_BATTERY + 5:
+                self.warned_low = False
+            elif battery <= LOW_BATTERY and not self.warned_low:
+                self.warned_low = True
+                with contextlib.suppress(GLib.Error):
+                    Notify.Notification.new(
+                        "Headset battery low", f"HyperX Cloud III S: {battery}%", "battery-caution-symbolic"
+                    ).show()
+
+    loop = GLib.MainLoop()
+    Service(loop)
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        GLibUnix.signal_add(GLib.PRIORITY_DEFAULT, sig, loop.quit)
+    loop.run()
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Battery and settings for the HyperX Cloud III S Wireless. Without options, shows the status."
+    )
+    parser.add_argument("--version", action="version", version=f"%(prog)s {VERSION}")
+    parser.add_argument(
+        "--service",
+        action="store_true",
+        help="run the D-Bus service used by the GNOME extension (started automatically)",
+    )
+    parser.add_argument("--sidetone", choices=("on", "off"), help="turn sidetone (hearing your own voice) on or off")
+    parser.add_argument(
+        "--auto-off",
+        type=int,
+        choices=AUTO_OFF_MINUTES,
+        metavar="MIN",
+        help="power off the headset after MIN minutes without audio (0 = never; 10, 20 or 30)",
+    )
+    eq = parser.add_mutually_exclusive_group()
+    eq.add_argument("--eq", choices=EQ_PRESETS, help="apply an equalizer preset")
+    eq.add_argument(
+        "--eq-custom",
+        type=parse_gains,
+        metavar="DB,...",
+        help=f"apply 10 gains in dB, from -12 to 12 ({', '.join(EQ_BANDS)})",
+    )
+    parser.add_argument("--debug", action="store_true", help="print the raw HID reports received")
+    args = parser.parse_args()
+    if args.service:
+        run_service()
+    else:
+        run_cli(args)
+
+
+if __name__ == "__main__":
+    main()

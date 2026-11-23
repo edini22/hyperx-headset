@@ -1,0 +1,14 @@
+.hyperx-headset-low {
+  color: #f8e45c;
+}
+
+.hyperx-headset-bar {
+  width: 7px;
+  height: 14px;
+  margin: 0 3px 0 1px;
+}
+
+.hyperx-headset-battery {
+  spacing: 6px;
+  min-width: 14em;
+}

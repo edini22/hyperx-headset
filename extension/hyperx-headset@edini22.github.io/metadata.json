@@ -1,0 +1,9 @@
+{
+  "uuid": "hyperx-headset@edini22.github.io",
+  "name": "HyperX Headset",
+  "description": "Battery, sidetone, auto power-off and equalizer for the HyperX Cloud III S in Quick Settings. Requires ~/.local/bin/hyperx-headset.",
+  "shell-version": ["50"],
+  "url": "https://github.com/edini22/hyperx-headset",
+  "version": 1,
+  "version-name": "0.1.0"
+}

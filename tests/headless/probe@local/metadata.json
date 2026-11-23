@@ -1,0 +1,6 @@
+{
+  "uuid": "probe@local",
+  "name": "HyperX Headset test probe",
+  "description": "Reports the HyperX extension UI state to the log; used by tests/headless/run.sh only.",
+  "shell-version": ["50"]
+}
