@@ -3,10 +3,12 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "lint": "eslint ."
+    "lint": "oxlint --deny-warnings",
+    "format": "oxfmt",
+    "format:check": "oxfmt --check"
   },
   "devDependencies": {
-    "@eslint/js": "^10.0.1",
-    "eslint": "^10.15.0"
+    "oxfmt": "^0.80.0",
+    "oxlint": "^1.95.0"
   }
 }
