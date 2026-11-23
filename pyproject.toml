@@ -5,3 +5,13 @@ extend-include = ["bin/hyperx-headset"]
 
 [tool.ruff.lint]
 select = ["E", "W", "F", "I", "B", "UP", "SIM"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+
+[tool.coverage.run]
+source = ["bin"]
+
+[tool.coverage.report]
+show_missing = true
