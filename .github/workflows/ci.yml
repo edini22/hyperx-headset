@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
   pull_request:
 
 permissions:
@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python: ["3.10", "3.14"]
+        python: ['3.10', '3.14']
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -33,16 +33,17 @@ jobs:
       - run: shellcheck install.sh tests/headless/run.sh scripts/*.sh
 
   extension:
-    name: Extension (eslint, metadata)
+    name: Extension and docs (oxlint, oxfmt)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: "24"
+          node-version: '24'
           cache: npm
       - run: npm ci
       - run: npm run lint
+      - run: npm run format:check
       - run: python3 -m json.tool extension/*/metadata.json > /dev/null
 
   version:

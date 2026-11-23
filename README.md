@@ -7,6 +7,10 @@ Battery level, sidetone, auto power-off and equalizer for the **HyperX Cloud III
 on Linux, shown in GNOME's Quick Settings next to the other system indicators. No vendor
 software; it talks to the 2.4 GHz USB dongle directly.
 
+<p align="center">
+  <img src="docs/demo.gif" alt="The top bar shows a headset icon, a battery bar and 79%. Hovering opens a menu with the battery level, sidetone, auto power-off and equalizer; Quick Settings has a HyperX toggle with the same controls." width="430">
+</p>
+
 - **Top bar:** headset icon, a battery level bar and the percentage. The bar turns orange
   at 20 % or less, the text turns yellow at 15 % or less, and ⚡ shows while charging.
   Hovering opens a small menu with the battery level and the settings.
@@ -118,18 +122,18 @@ headset ignores the request otherwise, and the switch is greyed out in the menu.
 Bus name and interface `io.github.edini22.HyperXHeadset`, object `/io/github/edini22/HyperXHeadset`,
 on the session bus. Properties are read-only and announced with `PropertiesChanged`.
 
-| Property         | Type    | Meaning                                                                                      |
-|------------------|---------|----------------------------------------------------------------------------------------------|
-| `Status`         | s       | `no-dongle`, `no-access`, `connecting`, `disconnected`, `deaf`, `reading` or `ok`            |
-| `Message`        | s       | Short human-readable status, e.g. `80% (charging)`                                           |
-| `Battery`        | i       | 0–100, or -1 if unknown                                                                      |
-| `Charging`       | i       | 0 not charging, 1 charging, 2 fully charged, -1 unknown                                      |
-| `Muted`          | i       | Microphone muted: 1, 0, or -1 unknown                                                        |
-| `Sidetone`       | i       | 1, 0, or -1 unknown                                                                          |
-| `AutoOff`        | i       | Minutes (0 = never), or -1 unknown                                                           |
-| `Eq`             | s       | Preset key last applied by this tool, `custom`, or empty                                     |
-| `EqPresets`      | a(ss)   | Preset keys and labels                                                                       |
-| `AutoOffChoices` | ai      | Allowed auto power-off values in minutes                                                     |
+| Property         | Type  | Meaning                                                                           |
+| ---------------- | ----- | --------------------------------------------------------------------------------- |
+| `Status`         | s     | `no-dongle`, `no-access`, `connecting`, `disconnected`, `deaf`, `reading` or `ok` |
+| `Message`        | s     | Short human-readable status, e.g. `80% (charging)`                                |
+| `Battery`        | i     | 0–100, or -1 if unknown                                                           |
+| `Charging`       | i     | 0 not charging, 1 charging, 2 fully charged, -1 unknown                           |
+| `Muted`          | i     | Microphone muted: 1, 0, or -1 unknown                                             |
+| `Sidetone`       | i     | 1, 0, or -1 unknown                                                               |
+| `AutoOff`        | i     | Minutes (0 = never), or -1 unknown                                                |
+| `Eq`             | s     | Preset key last applied by this tool, `custom`, or empty                          |
+| `EqPresets`      | a(ss) | Preset keys and labels                                                            |
+| `AutoOffChoices` | ai    | Allowed auto power-off values in minutes                                          |
 
 Methods: `SetSidetone(b)`, `SetAutoOff(i)`, `SetEq(s)`, `Refresh()`. Invalid requests fail
 with `io.github.edini22.HyperXHeadset.Error`.
@@ -151,17 +155,17 @@ reply:   0c 02 03 01 00 <cmd> <value> [<value>]      (value ff = no data)
 event:   0d 00 00 00 <kind> <value>
 ```
 
-| Command | Meaning              | Value                                                     |
-|---------|----------------------|-----------------------------------------------------------|
-| `02`    | headset connected    | `02` = connected                                          |
-| `04`    | microphone muted     | `01` = muted                                              |
-| `06`    | battery              | percentage                                                |
-| `16`    | sidetone (query)     | `01` = on                                                 |
-| `0d`    | sidetone (set)       | `01` / `00`                                               |
-| `48`    | charging             | `00` no, `01` charging, `02` full                         |
-| `4b`    | auto power-off (get) | seconds, 16-bit big-endian                                |
-| `4a`    | auto power-off (set) | seconds, 16-bit big-endian                                |
-| `5f`    | equalizer band (set) | band 0–9, then dB × 100 as signed 16-bit big-endian       |
+| Command | Meaning              | Value                                               |
+| ------- | -------------------- | --------------------------------------------------- |
+| `02`    | headset connected    | `02` = connected                                    |
+| `04`    | microphone muted     | `01` = muted                                        |
+| `06`    | battery              | percentage                                          |
+| `16`    | sidetone (query)     | `01` = on                                           |
+| `0d`    | sidetone (set)       | `01` / `00`                                         |
+| `48`    | charging             | `00` no, `01` charging, `02` full                   |
+| `4b`    | auto power-off (get) | seconds, 16-bit big-endian                          |
+| `4a`    | auto power-off (set) | seconds, 16-bit big-endian                          |
+| `5f`    | equalizer band (set) | band 0–9, then dB × 100 as signed 16-bit big-endian |
 
 Event kinds: `01` battery, `03` mute, `05` sidetone, `0a` charging, `0c` connected.
 
@@ -191,9 +195,13 @@ linters locally (`uvx` comes with [uv](https://docs.astral.sh/uv/)):
 ```bash
 uvx ruff check . && uvx ruff format --check .                                        # Python
 uvx --from shellcheck-py shellcheck install.sh tests/headless/run.sh scripts/*.sh    # shell
-npm ci && npm run lint                                                               # extension (ESLint)
+npm ci && npm run lint && npm run format:check                                       # oxlint and oxfmt
 scripts/check-version.sh                                                             # versions agree
 ```
+
+[oxlint](https://oxc.rs/docs/guide/usage/linter) checks the extension's JavaScript and
+[oxfmt](https://oxc.rs/docs/guide/usage/formatter) formats the JavaScript, JSON, YAML, CSS and
+Markdown files (`npm run format` to apply); ruff covers the Python.
 
 `tests/headless/run.sh` starts GNOME Shell with `--headless` on its own session bus, with a
 temporary settings database and the repository's copy of the extension, so you can check
@@ -206,18 +214,30 @@ PROBE toggle-menu PopupSubMenuMenuItem label="Auto power-off: 20 min" sensitive=
 PROBE hover open=true panelActive=true
 ```
 
+`scripts/record-demo.sh` uses the same headless shell with a demo extension that opens each menu
+and takes screenshots, and turns them into `docs/demo.gif`. It needs the headset connected (for a
+real battery level) and Pillow (`python3-pil`).
+
 To run the service in a terminal, stop the D-Bus-started one first:
 
 ```bash
 pkill -f 'hyperx-headset --service'; hyperx-headset --service
 ```
 
-## Releasing
+## Branches and releases
+
+- `main` holds released code only; every release is a `v*` tag on `main`.
+- `dev` is where work comes together. Changes go in on a branch off `dev` (for example
+  `fix/…`, `feat/…`, `docs/…`) through a pull request, and CI has to pass.
+- Both branches are protected, and only the maintainer can push to them and create `v*` tags.
+
+To release:
 
 1. Move the `[Unreleased]` notes in [CHANGELOG.md](CHANGELOG.md) under a new version heading.
 2. Set the same version in `VERSION` in `bin/hyperx-headset` and in `version-name` in the
    extension's `metadata.json`, and bump its integer `version`.
-3. Commit, then tag and push: `git tag -a v0.2.0 -m v0.2.0 && git push origin main v0.2.0`.
+3. Merge `dev` into `main` through a pull request, then tag `main` and push the tag:
+   `git tag -a v0.2.0 -m v0.2.0 && git push origin v0.2.0`.
 
 The [release workflow](.github/workflows/release.yml) checks that the tag matches the version
 and publishes a GitHub release with that version's CHANGELOG notes.

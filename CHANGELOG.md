@@ -6,6 +6,21 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Demo GIF in the README, recorded by `scripts/record-demo.sh` in a headless GNOME Shell.
+
+### Changed
+
+- The extension's JavaScript is checked with oxlint and formatted with oxfmt instead of ESLint;
+  oxfmt also formats the JSON, YAML, CSS and Markdown files.
+- CI also runs on pushes to `dev`.
+
+### Fixed
+
+- The battery level bar in the hover menu and in the HyperX Quick Settings menu was invisible,
+  because the theme gives no height to level bars outside the on-screen display.
+
 ## [0.1.0] - 2026-11-23
 
 First release.

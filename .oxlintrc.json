@@ -1,0 +1,19 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "env": {"es2022": true},
+  "globals": {
+    "console": "readonly",
+    "global": "readonly",
+    "log": "readonly",
+    "logError": "readonly"
+  },
+  "categories": {
+    "correctness": "error",
+    "suspicious": "warn"
+  },
+  "rules": {
+    "no-undef": "error",
+    "no-unused-vars": "error",
+    "no-underscore-dangle": "off"
+  }
+}
