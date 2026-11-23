@@ -1,0 +1,6 @@
+{
+  "uuid": "demo@local",
+  "name": "HyperX Headset demo recorder",
+  "description": "Opens each part of the HyperX extension and saves screenshots; used by scripts/record-demo.sh only.",
+  "shell-version": ["50"]
+}
