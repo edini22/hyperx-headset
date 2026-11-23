@@ -184,24 +184,41 @@ Event kinds: `01` battery, `03` mute, `05` sidetone, `0a` charging, `0c` connect
 
 ## Development
 
-```bash
-python3 -m unittest discover -s tests    # protocol tests, using replies captured from a real dongle
-tests/headless/run.sh                    # load the extension in a throwaway headless GNOME Shell
-```
-
-The same checks run in [CI](.github/workflows/ci.yml) on every push and pull request. To run the
-linters locally (`uvx` comes with [uv](https://docs.astral.sh/uv/)):
+Set up the pinned development tools (with [uv](https://docs.astral.sh/uv/), or `python3 -m venv`
+and `pip`):
 
 ```bash
-uvx ruff check . && uvx ruff format --check .                                        # Python
-uvx --from shellcheck-py shellcheck install.sh tests/headless/run.sh scripts/*.sh    # shell
-npm ci && npm run lint && npm run format:check                                       # oxlint and oxfmt
-scripts/check-version.sh                                                             # versions agree
+uv venv && uv pip install -r requirements-dev.txt    # ruff, pytest, pytest-cov, shellcheck
+npm ci                                                # oxlint, oxfmt
 ```
+
+Then run the same checks as [CI](.github/workflows/ci.yml):
+
+```bash
+.venv/bin/pytest --cov                                                     # unit tests with a coverage report
+.venv/bin/ruff check . && .venv/bin/ruff format --check .                  # Python
+.venv/bin/shellcheck install.sh tests/headless/run.sh scripts/*.sh         # shell
+npm run lint && npm run format:check                                       # oxlint and oxfmt
+scripts/check-version.sh                                                   # versions agree
+tests/headless/run.sh                                                      # extension in a headless GNOME Shell
+```
+
+The unit tests cover the HID protocol, using replies captured from a real dongle, and the command
+line, against a fake dongle; the D-Bus service needs a session and is checked with
+`tests/headless/run.sh`. In CI each Python job adds a test and coverage summary to the run page and
+uploads the JUnit and coverage reports (XML and HTML) as `test-reports-python-<version>`.
 
 [oxlint](https://oxc.rs/docs/guide/usage/linter) checks the extension's JavaScript and
 [oxfmt](https://oxc.rs/docs/guide/usage/formatter) formats the JavaScript, JSON, YAML, CSS and
 Markdown files (`npm run format` to apply); ruff covers the Python.
+
+All versions are pinned: Python tools in `requirements-dev.txt` (compiled from
+`requirements-dev.in`, for every supported Python), npm packages exactly in `package.json` and
+`package-lock.json`, and GitHub Actions to commit SHAs. To update the Python tools:
+
+```bash
+uv pip compile requirements-dev.in --universal --python-version 3.10 --upgrade -o requirements-dev.txt
+```
 
 `tests/headless/run.sh` starts GNOME Shell with `--headless` on its own session bus, with a
 temporary settings database and the repository's copy of the extension, so you can check

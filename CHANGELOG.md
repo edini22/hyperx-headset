@@ -6,6 +6,17 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Unit tests for the command line against a fake dongle.
+
+### Changed
+
+- Tests run with pytest. CI adds a test and coverage summary to each run and uploads the JUnit and
+  coverage reports as artifacts.
+- Development tools and GitHub Actions are pinned to exact versions: `requirements-dev.txt`
+  (compiled with uv), exact npm versions, and actions pinned to commit SHAs (now v7).
+
 ## [0.1.1] - 2026-11-23
 
 ### Added

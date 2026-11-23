@@ -8,7 +8,7 @@
     "format:check": "oxfmt --check"
   },
   "devDependencies": {
-    "oxfmt": "^0.80.0",
-    "oxlint": "^1.95.0"
+    "oxfmt": "0.80.0",
+    "oxlint": "1.95.0"
   }
 }
