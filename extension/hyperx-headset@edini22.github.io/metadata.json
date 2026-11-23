@@ -4,6 +4,6 @@
   "description": "Battery, sidetone, auto power-off and equalizer for the HyperX Cloud III S in Quick Settings. Requires ~/.local/bin/hyperx-headset.",
   "shell-version": ["50"],
   "url": "https://github.com/edini22/hyperx-headset",
-  "version": 2,
-  "version-name": "0.1.1"
+  "version": 3,
+  "version-name": "0.1.2"
 }

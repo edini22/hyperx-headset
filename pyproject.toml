@@ -1,6 +1,6 @@
 [project]
 name = "hyperx-headset"
-version = "0.1.1"
+version = "0.1.2"
 description = "Battery, sidetone, auto power-off and equalizer for the HyperX Cloud III S Wireless on GNOME"
 readme = "README.md"
 license = "MIT"

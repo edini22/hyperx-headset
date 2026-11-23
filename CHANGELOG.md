@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-11-23
+
 ### Added
 
 - Unit tests for the command line against a fake dongle.
@@ -56,6 +58,7 @@ First release.
 - Protocol unit tests based on replies captured from a real dongle, and
   `tests/headless/run.sh` to check the extension in a headless GNOME Shell.
 
-[Unreleased]: https://github.com/edini22/hyperx-headset/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/edini22/hyperx-headset/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/edini22/hyperx-headset/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/edini22/hyperx-headset/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/edini22/hyperx-headset/releases/tag/v0.1.0
