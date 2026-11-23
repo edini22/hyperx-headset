@@ -9,6 +9,8 @@ All notable changes to this project are documented here. The format follows
 ### Added
 
 - Unit tests for the command line against a fake dongle.
+- `.python-version` (3.14, used by uv, pyenv and CI) and project metadata in `pyproject.toml`,
+  including the supported Python versions (`requires-python = ">=3.10"`).
 
 ### Changed
 

@@ -1,6 +1,31 @@
+[project]
+name = "hyperx-headset"
+version = "0.1.1"
+description = "Battery, sidetone, auto power-off and equalizer for the HyperX Cloud III S Wireless on GNOME"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Eduardo Figueiredo" }]
+requires-python = ">=3.10"
+classifiers = [
+    "Desktop Environment :: Gnome",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: System :: Hardware",
+]
+
+[project.urls]
+Homepage = "https://github.com/edini22/hyperx-headset"
+Changelog = "https://github.com/edini22/hyperx-headset/blob/main/CHANGELOG.md"
+Issues = "https://github.com/edini22/hyperx-headset/issues"
+
 [tool.ruff]
 line-length = 120
-target-version = "py310"
 extend-include = ["bin/hyperx-headset"]
 
 [tool.ruff.lint]

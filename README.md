@@ -41,7 +41,8 @@ headset ⇄ 2.4 GHz ⇄ USB dongle ─ /dev/hidrawN ─ hyperx-headset --service
 ## Requirements
 
 - GNOME Shell 50 (the extension's `metadata.json` declares this version).
-- Python 3.10+ with PyGObject and libnotify: `sudo apt install python3-gi gir1.2-notify-0.7`.
+- Python 3.10+ (`requires-python` in `pyproject.toml`; development uses the version in
+  `.python-version`) with PyGObject and libnotify: `sudo apt install python3-gi gir1.2-notify-0.7`.
 - `sudo` once, for a udev rule and a kernel parameter (see below).
 
 ## The "deaf dongle" problem
@@ -251,8 +252,8 @@ pkill -f 'hyperx-headset --service'; hyperx-headset --service
 To release:
 
 1. Move the `[Unreleased]` notes in [CHANGELOG.md](CHANGELOG.md) under a new version heading.
-2. Set the same version in `VERSION` in `bin/hyperx-headset` and in `version-name` in the
-   extension's `metadata.json`, and bump its integer `version`.
+2. Set the same version in `VERSION` in `bin/hyperx-headset`, in `version` in `pyproject.toml`
+   and in `version-name` in the extension's `metadata.json`, and bump its integer `version`.
 3. Merge `dev` into `main` through a pull request, then tag `main` and push the tag:
    `git tag -a v0.2.0 -m v0.2.0 && git push origin v0.2.0`.
 

@@ -1,14 +1,19 @@
 #!/usr/bin/env bash
-# Fails unless bin/hyperx-headset, metadata.json and CHANGELOG.md agree on the version,
+# Fails unless bin/hyperx-headset, pyproject.toml, metadata.json and CHANGELOG.md agree on the version,
 # and, when a tag is given (e.g. v0.1.0), unless the tag matches it too. Prints the version.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 script=$(sed -n 's/^VERSION = "\(.*\)"$/\1/p' bin/hyperx-headset)
 metadata=$(python3 -c 'import glob, json; print(json.load(open(glob.glob("extension/*/metadata.json")[0]))["version-name"])')
+project=$(python3 -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')
 
 if [[ -z $script ]]; then
     echo "no VERSION in bin/hyperx-headset" >&2
+    exit 1
+fi
+if [[ $script != "$project" ]]; then
+    echo "bin/hyperx-headset says $script but pyproject.toml says $project" >&2
     exit 1
 fi
 if [[ $script != "$metadata" ]]; then
